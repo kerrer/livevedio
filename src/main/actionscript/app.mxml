@@ -183,7 +183,7 @@
 				nc = new NetConnection();	
 				nc.client = this;
 				nc.addEventListener(NetStatusEvent.NET_STATUS,onlineDoctorStatus);	
-				nc.connect(doctorUri,session_id,session_id,"new room");
+				nc.connect(doctorUri,session_id,session_id);
 			}
 			
 			private function onlineDoctorStatus(evt:NetStatusEvent):void{		
@@ -212,7 +212,7 @@
 				//curRoomName  = dtf.format(dt) +  (Math.random()*100 + 10);	
 				//act = "new room";									
 				
-				initalNetConnection("new room");	
+				initalNetConnection();	
 			}		
 			
 						
@@ -228,7 +228,7 @@
 				nc.call("prepareVedio",null,loginName,pharmacy_id);					
 			}
 			
-			public function initalNetConnection(act:String="new room"):void{	
+			public function initalNetConnection():void{	
 				if(!roomBaseUri){
 					Message.showDebugMessage("FLASH 505");
 					
@@ -241,7 +241,7 @@
 				nc = new NetConnection();				
 				nc.addEventListener(NetStatusEvent.NET_STATUS,chatConnectStatus);				
 				nc.client = this;				
-				nc.connect(roomBaseUri+"/"+curRoomName,curRoomName,session_id,act);				
+				nc.connect(roomBaseUri+"/"+curRoomName,curRoomName,session_id);				
 			}				
 			
 			
