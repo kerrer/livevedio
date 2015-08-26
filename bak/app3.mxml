@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Module xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		  xmlns:s="library://ns.adobe.com/flex/spark" 
+		  xmlns:mx="library://ns.adobe.com/flex/mx" width="400" height="300"  creationComplete="con()">
+	<fx:Declarations>
+		<!-- 将非可视元素（例如服务、值对象）放在此处 -->
+	</fx:Declarations>
+		<fx:Script>
+			<![CDATA[
+				import mx.events.ListEvent;
+				import flash.utils.flash_proxy;
+				
+				import mx.core.UIComponent;
+				import mx.messaging.AbstractConsumer;
+				import mx.collections.ArrayCollection;
+				import flash.events.*;
+				import flash.media.Video;
+				import flash.net.*;
+				import flash.external.ExternalInterface;
+				
+				[Bindable]
+				private var net:NetConnection;
+				
+				import mx.controls.Alert;
+				private var username:String;
+				private var roomname:String;
+				
+				[Bindable]
+				private var arrayCon:ArrayCollection;
+				
+				[Bindable]
+				private var comboArrayCon:ArrayCollection;
+				
+				var ns:NetStream;
+				var nsPlay:NetStream;
+				
+				public function con():void{
+					
+					//chat.addEventListener(Event.ENTER_FRAME,onEnterFrame);
+					//username = parameters.name;
+					//roomname = parameters.roomname;
+					username="22";
+					
+					roomname="11";
+					if(comboArrayCon==null){
+						comboArrayCon = new ArrayCollection();
+					}
+					comboArrayCon.addItem("all");
+					//Alert.show(username,roomname);
+					l.text = "您在"+roomname+"聊天室里!";
+					if(net==null){
+						net = new NetConnection();
+						net.addEventListener(NetStatusEvent.NET_STATUS,netStatus);
+						net.addEventListener(AsyncErrorEvent.ASYNC_ERROR,onAsyncError);
+						net.connect("rtmp://192.168.1.32/mychat/"+roomname+"/",username,roomname);
+						net.client = this;
+					}
+				}
+				
+				
+				private function onAsyncError(event:AsyncErrorEvent):void{
+					trace("asyncerror");
+				}
+				
+				
+				private function onEnterFrame(event:Event):void{
+					
+				}
+				
+				public function netStatus(event:NetStatusEvent):void{
+					trace(event.info.code);
+					switch(event.info.code){
+						case "NetConnection.Connect.Success":
+							ns = new NetStream(net);
+							var mic:Microphone = Microphone.getMicrophone();
+							mic.setUseEchoSuppression(true);
+							mic.setSilenceLevel(0);
+							ns.attachAudio(mic);
+							try{
+								var cam:Camera = Camera.getCamera();
+								cam.setMode(271,241,15);
+								cam.setQuality(144000,85 );
+								
+								ns.attachCamera(cam);
+							}catch(error:Error){
+								trace(error);
+							}
+							getVideo();
+							break;
+					}
+					
+				}
+				
+				protected function image1_clickHandler(event:MouseEvent):void
+				{
+					ExternalInterface.call("geturl");
+				}
+				
+				
+				private function onEnterClick(event:KeyboardEvent):void{
+					if(event.keyCode==13){
+						sendMsg();
+					}
+				}
+				
+				private function onSendClick(event:Event):void{
+					sendMsg();
+				}
+				
+				private function sendMsg():void{
+					if(msg.text==""){
+						Alert.show("请输入内容!");
+					}else{
+						net.call("sendToRoom",null,msg.text,roomname,username,o.selectedItem);
+						msg.text = "";
+						this.setFocus();
+						this.focusManager.setFocus(msg);
+						msg.setSelection(0,0);
+						
+					}
+				}
+				
+				public function sendToRoom(str:String):void{
+					c.text = c.text + str+"\n";
+					this.focusManager.setFocus(msg);
+				}
+				
+				public function updateList(user:String):void{
+					try{
+						trace("update");
+						var arr:Array;
+						if(user==""){
+							arr = new Array();
+						}else{
+							arr = user.split(",");
+						}
+						arrayCon = new ArrayCollection(arr);
+					}catch(err:Error){
+						trace(err);
+					}
+					
+				}
+				
+				protected function userlist_itemClickHandler(eventistEvent):void
+				{
+					if(!comboArrayCon.contains(userlist.selectedItem)){
+						comboArrayCon.addItem(userlist.selectedItem);
+						o.selectedIndex = comboArrayCon.length;
+					}else{
+						o.selectedIndex = comboArrayCon.getItemIndex(userlist.selectedItem);
+						
+						
+					}
+					
+					
+				}
+				
+				private function oLabel(object:Object):String{
+					return object.toString();
+				}
+				public function netStream(name:String):void{
+					
+					nsPlay = new NetStream(net);
+					nsPlay.play(name);
+					var video:Video = new Video(v.width,v.height);
+					v.addChild(video);
+					video.attachNetStream(nsPlay);
+					video.width = v.width;
+					video.height = v.height;
+					
+				}
+				
+				public function playVideo():void{
+					net.call("checkVideo",null,username,roomname);
+					
+				}
+				public function getVideo():void{
+					net.call("sendVideo",null,username,roomname);
+					
+				}
+				public function canVideo():void{
+					ns.publish(username);
+					w.enabled = false;
+					s.enabled = true;
+					net.call("playVideo",null,username,roomname);
+				}
+				public function canNotVideo():void{
+					Alert.show("有人抢先啦，慢慢等吧");
+					
+				}
+				public function escVideo():void{
+					trace("escvideo");
+					nsPlay.close();
+					w.enabled = true;
+					s.enabled = false;
+				}
+				
+				
+				
+			]]>
+		</fx:Script>
+	    <s:Label width="168" id="l"/>
+		<mx:TextArea width="472" height="239" id="c" editable="false" x="5" y="26"/>
+		<mx:TextInput x="67" y="273" width="335" id="msg" keyUp="onEnterClick(event)"/>
+	    <mx:DataGrid id="userlist" x="403" y="55" width="185" height="160" dataProvider="{arrayCon}" itemClick="userlist_itemClickHandler(event)">				
+	    </mx:DataGrid>		
+		<mx:ComboBox x="-1" y="273" editable="false" width="60" id="o" dataProvider="{comboArrayCon}" />
+		<mx:Button x="414" y="273" label="send" width="63" id="send" click="onSendClick(event)"/>
+		<mx:Button x="485" y="273" label="我要视频" click="playVideo()" id="w"/>
+		<mx:VideoDisplay x="623" y="24" width="271" height="241" id="v"/>
+		<mx:Button x="563" y="273" label="不视频了" click="net.call('escVideo',null,roomname)" enabled="false" id="s"/>
+
+</s:Module>

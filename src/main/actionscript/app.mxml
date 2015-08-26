@@ -1,0 +1,558 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"
+			   xmlns:s="library://ns.adobe.com/flex/spark"
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   width="287" height="442" creationComplete="startApp()">
+	<s:VideoDisplay id="localVideo" x="0" y="0" width="287" height="214"/>		
+	<s:VideoDisplay id="remoteVideo" x="0" y="226" width="287" height="214"/>
+	<!--
+	<s:BorderContainer  borderStyle="inset" borderWeight="1">			
+	
+	</s:BorderContainer>	
+	<s:BorderContainer  borderStyle="inset" borderWeight="1">		
+	
+	</s:BorderContainer>	
+	-->
+	<fx:Script>
+
+		<![CDATA[		
+			
+			import com.yixiang.wlyy.introvertIM.IMManager;
+			import com.yixiang.wlyy.introvertIM.IMReadyEvent;
+			import com.yixiang.wlyy.introvertIM.IMMessageEvent;
+			import com.yixiang.wlyy.introvertIM.IMStatus;
+			import com.yixiang.wlyy.utils.Message;
+			
+			import com.yixiang.wlyy.utils.Message;
+			
+			import flash.events.NetStatusEvent;
+			import flash.events.SyncEvent;
+			//import flash.globalization.DateTimeFormatter;
+			import flash.media.Camera;
+			import flash.media.H264Level;
+			import flash.media.H264Profile;
+			import flash.media.H264VideoStreamSettings;
+			import flash.media.Microphone;
+			import flash.media.Video;
+			import flash.media.SoundCodec;
+			import flash.net.NetConnection;
+			import flash.net.NetStream;
+			import flash.net.Responder;
+			import flash.net.SharedObject;
+			
+			//import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.core.FlexGlobals;
+			
+			import spark.components.Application;
+			
+			import mx.rpc.http.HTTPService; 
+			import mx.rpc.events.ResultEvent; 
+			import mx.rpc.events.FaultEvent;
+			
+			private var nc:NetConnection; 			
+			private var responder:Responder;			
+			private var randomUser:String;			
+			private var listSO:SharedObject;			
+			
+			private var outNs:NetStream;			
+			private var inNs:NetStream;			
+			private var lVideo:Video;			
+			private var rVideo:Video;			
+			private var cam:Camera;			
+			private var mic:Microphone;			
+			 
+			
+			private var service:HTTPService 
+			
+			private var doctorUri:String;
+			private var roomBaseUri:String;
+			private var curRoomName:String;
+			private var session_id:String;
+			private var loginName:String;
+			private var clientType:int;
+			private var volume:int=50;
+			private var rtmpBaseUri:String;			
+			
+			//in or off
+			private var status:String="off";  
+			
+			private var onlineDoctorTimer:Timer = new Timer(10000, 0);
+			
+			//private var cards:ArrayCollection;	
+			
+			private const VEDIO_WIDTH:Number = 287;
+			private const VEDIO_HEIGHT:Number = 214;
+			private const VEDIO_KEYFRAME:Number = 10;
+			private const VEDIO_QUALITY:Number =85;
+			
+			private var _manager:IMManager;
+			
+			public function initParams():void{
+				session_id=ExternalInterface.call("$S.getSessionId");
+				doctorUri= rtmpBaseUri + "/doctors/" + session_id;				
+			}
+			
+			private function startApp():void{
+				//cards = new ArrayCollection();
+				Message.setDebug(FlexGlobals.topLevelApplication.parameters.debug);	
+				
+				
+				
+				_manager = new IMManager(IMStatus.allStatuses.getItemAt(0) as IMStatus);
+			    //_manager.addEventListener(IMMessageEvent.NEW_MESSAGE, newMessageHandler);		
+				_manager.addEventListener(IMReadyEvent.APP_READY,setCallBack);
+				
+				
+			}
+			
+			private function setRemoteVedio():void{
+			    Message.showDebugMessage("start setRemoteVedio..........");
+				var protocol:String = FlexGlobals.topLevelApplication.parameters.protocol;
+				var host:String  = FlexGlobals.topLevelApplication.parameters.host;
+				Message.showDebugMessage(protocol); 
+				Message.showDebugMessage(host); 
+				var remoteVedio:String = protocol + "//" + host + "/Home/Out/index";
+				Message.showDebugMessage(remoteVedio); 
+				var parameters:Object = {fname:"John", lname:"Public"};
+		     	service = new HTTPService(); 
+				service.url = remoteVedio; 
+				service.method = "POST"; 
+				service.addEventListener("result", httpResult); 
+				service.addEventListener("fault", httpFault); 
+				service.send(parameters); 
+			} 
+			
+			public function httpResult(event:ResultEvent):void { 
+				var result:Object = event.result; 
+				Message.showDebugMessage(result.toString()); 
+				var host:String=result.toString();
+				rtmpBaseUri = "rtmp://" + host + ":19355/yxvedio";	
+				
+				roomBaseUri= rtmpBaseUri + "/room";
+				clientType=ExternalInterface.call("$S.getClientType");
+				
+				
+				if(clientType ==1){		
+					onlineDoctor();
+					onlineDoctorTimer.addEventListener(TimerEvent.TIMER, onlineDoctorTimeHandler);
+					onlineDoctorTimer.start();
+				}
+			} 
+			
+			public function httpFault(event:FaultEvent):void { 
+				var faultstring:String = event.fault.faultString; 
+				Message.showDebugMessage(faultstring); 
+			} 
+			
+			private function newMessageHandler(event:IMMessageEvent):void {
+				Message.showDebugMessage("newMessageHandler: "+ event.message);
+			}
+			private function setCallBack(event:IMReadyEvent):void{		
+				Message.showDebugMessage("event ready: " + event.toString());
+				if(event.ready){
+					//extenal javascript interface
+					ExternalInterface.addCallback("yxAsJoinRoom", connectAndJoinRoom);
+					ExternalInterface.addCallback("yxAsChangeRoom", changeAndJoinRoom);
+					ExternalInterface.addCallback("yxAsLeaveRoom", leaveRoom);
+					ExternalInterface.addCallback("yxAsChatMessage", sendChatMessage);
+					ExternalInterface.addCallback("yxAsInviteVideo", inviteDoctorVideo);
+					ExternalInterface.addCallback("yxAsPrepareVideo", prepareVideo);
+					ExternalInterface.addCallback("yxAsPush",          pushMessage);
+					ExternalInterface.addCallback("yxAsDisableSound", disableSound);
+					ExternalInterface.addCallback("yxAsEnableSound", enableSound);
+					ExternalInterface.addCallback("yxAsDisableVideo", disableVideo);
+					ExternalInterface.addCallback("yxAsEnableVideo", enableVideo);		
+					Message.showDebugMessage("Add callback successful!");
+					setRemoteVedio();
+				}
+			}
+			
+			private function onlineDoctorTimeHandler(e:TimerEvent):void{
+				Message.showDebugMessage("recheck doctor room status: " + status);
+				if(status != "in")
+					onlineDoctor();				
+								
+			}
+			
+			private function onlineDoctor():void{
+				if(nc != null)
+					nc.close()
+				initParams();
+				nc = new NetConnection();	
+				nc.client = this;
+				nc.addEventListener(NetStatusEvent.NET_STATUS,onlineDoctorStatus);	
+				nc.connect(doctorUri,session_id,session_id,"new room");
+			}
+			
+			private function onlineDoctorStatus(evt:NetStatusEvent):void{		
+				if(evt.info.code == "NetConnection.Connect.Success"){	
+					Message.showDebugMessage("rejoin doctor room");
+					status = "in";
+					ExternalInterface.call("$Y.upDateHtml", "HouZhen");					
+				}else if(evt.info.code == "NetConnection.Connect.Rejected"){	
+					
+				}else{
+					status = "off";
+				}
+			}			
+			
+			
+			
+			public function connectAndJoinRoom(roomName:String):void{	
+				Message.showDebugMessage("joining room: " + roomName);
+				responder = new Responder(doTips);				
+				
+				curRoomName = roomName;										
+				
+				//var  dt:Date = new Date();
+				//var dtf:DateTimeFormatter = new DateTimeFormatter("zh-CN");
+				//dtf.setDateTimePattern("yyyyMMddHHmmssSSSSS");	
+				//curRoomName  = dtf.format(dt) +  (Math.random()*100 + 10);	
+				//act = "new room";									
+				
+				initalNetConnection("new room");	
+			}		
+			
+						
+			public function changeAndJoinRoom(receiver:Object):void{			        
+				Message.showDebugMessage("change room...");
+				var pharmacy_id:String = receiver.pharmacy_id;
+				var patient_id:String = receiver.patient_id;
+				var inquiry_id:String = receiver.inquiry_id;
+				Message.showDebugMessage("loginName"+loginName);				
+				
+				curRoomName = inquiry_id;
+				initalNetConnection("join room");	
+				nc.call("prepareVedio",null,loginName,pharmacy_id);					
+			}
+			
+			public function initalNetConnection(act:String="new room"):void{	
+				if(!roomBaseUri){
+					Message.showDebugMessage("FLASH 505");
+					
+				}
+				
+				if(nc != null)
+					nc.close();
+				initParams();
+				status = "off";
+				nc = new NetConnection();				
+				nc.addEventListener(NetStatusEvent.NET_STATUS,chatConnectStatus);				
+				nc.client = this;				
+				nc.connect(roomBaseUri+"/"+curRoomName,curRoomName,session_id,act);				
+			}				
+			
+			
+			public function leaveRoom():void{	
+				//nc.call("pushMessage",null,"normalDis","0",loginName);			
+				//nc.call("flushDisconnect",null,loginName);	
+				status = "off"
+				
+				Message.showDebugMessage("prepare leave: " + loginName)
+				nc.call("prepareLeave",null,loginName);
+				var timer:Timer = new Timer(3000, 1); // 3-second delay
+				timer.addEventListener(TimerEvent.TIMER, leaveRoomTimerHandler);
+				timer.start();
+		    }
+			
+			public function leaveRoomTimerHandler(event:TimerEvent):void {
+				Message.showDebugMessage("timerHandler: " + event);
+			    Message.showDebugMessage("start close: " + loginName);
+				close();
+			}
+			
+			public function prepareLeave(fromName:String):void{
+				Message.showDebugMessage("start close: " + loginName);
+				status = "off";
+				ExternalInterface.call("$Y.upDateHtml", "normalDis");				
+				close();				
+			}
+			
+			internal function chatConnectStatus(evt:NetStatusEvent):void{				
+				// Alert.show(evt.info.code);				
+				Message.showDebugMessage("SystemInfo:"+evt.info.code+"\n");	
+				
+				if(evt.info.code == "NetConnection.Connect.Success"){					
+					//nc.call("jionChatRoom",null,1);	
+					status = "in";
+					Message.showDebugMessage("join room sucess");	
+					//_setListSO();			
+					
+				}else if(evt.info.code == "NetConnection.Connect.Rejected"){					
+					/*if(evt.info.application.indexOf("NewRoom") != -1){
+					var room_id: String = evt.info.application.substr(evt.info.application.indexOf(":")+1);
+					uri = "rtmp://192.168.56.16/yxvedio/room"+room_id;
+					nc=null;
+					initalNetConnection();   
+					}*/
+					
+					Message.showDebugMessage("reason:"+ evt.info.application);	
+				}else if(evt.info.code == "NetConnection.Connect.Closed"){
+					if(status == "in"){
+						status = "off";
+						if(clientType == 1){
+							ExternalInterface.call("$S.doctor_disconnect",1);	
+						}else if(clientType == 2){
+							ExternalInterface.call("$S.yaodian_disconnect",1);
+						}								
+						
+					}
+				}else{
+					Message.showDebugMessage("connect:" + evt.toString());
+				}			
+			}
+			
+			public function close():void{		
+				localVideo.addChild(null)
+				remoteVideo.addChild(null);
+				
+				if(outNs !=null ) {
+					outNs.attachCamera(null);					
+					outNs.attachAudio(null);					
+					outNs.close();
+				}
+				
+				
+				if(inNs !=null)
+					inNs.close();
+				
+				if(nc != null)
+					nc.close();		
+				outNs = null;			
+				inNs = null;			
+				lVideo = null;			
+				rVideo = null;			
+				cam = null;			
+				mic = null;
+				nc = null;				
+				
+			}
+			
+			public function loginInfo(userName:String):void{	
+				loginName= userName;
+				Message.showDebugMessage("login as: " + loginName);
+			}
+			public function pushMessage(dataType:String,targetId:String,data:String):void{
+				Message.showDebugMessage("dataType:"+dataType+",targetId:"+targetId);
+				nc.call("pushMessage",null,dataType,targetId,data);
+			}
+			
+			public function getMessage(json:String):void{
+				Message.showDebugMessage("getMessage:"+json);
+				ExternalInterface.call("$S.getPush",json)
+			}
+			
+			internal function doTips():void{				
+				Message.showDebugMessage("发送成功");				
+			}	
+			
+			internal function _setListSO():void{		
+				listSO = SharedObject.getRemote(curRoomName,nc.uri,false);				
+				listSO.connect(nc);				
+				listSO.addEventListener(SyncEvent.SYNC,syncHander);		
+			}		
+			
+			
+			internal function syncHander(evt:SyncEvent):void{		
+				trace(1);
+				//_showUserList();				
+			}
+			
+//			internal function _showUserList():void{	
+//				cards.removeAll();					
+//				for(var user_id:String in listSO.data){				
+//					cards.addItem({user_id:user_id,label:listSO.data[user_id]});					
+//				}					
+//				
+//				//Message.flushPatientQuene(cards); 
+//			}
+			
+			public function showPatientQuene(quene:String):void{
+				trace(quene);
+				/* Message.showConsoleMessage(quene);
+				return;
+				cards.removeAll();
+				
+				for(var user_id:String in listSO.data){					
+				
+				cards.addItem({user_id:user_id,label:listSO.data[user_id]});					
+				}					
+				*/
+				Message.flushPatientQuene(quene); 
+			}
+			
+			internal function inviteDoctorVideo(parter_id:int):void{		
+				
+				//var toUser:String = selectUser.text==null?"":selectUser.text;				
+				if(parter_id>0){					
+					nc.call("videoInvite",null,parter_id);					
+				}else{					
+					Message.showDialogMessage("请选择要视频的用户！");					
+				}
+			}		
+			
+			public function prepareVideo(receiver:Object):void {
+				var pharmacy_id:String = receiver.pharmacy_id;
+				var patient_id:String = receiver.patient_id;
+				var inquiry_id:String = receiver.inquiry_id;
+				ExternalInterface.call("$S.showMessage",loginName);			 
+				nc.call("preparetVedio",null,loginName,patient_id);
+			}
+			
+			public function startVideo(roomer:String):void {
+				var videoUsers:Array=roomer.split(":");	
+				var senderName:String = videoUsers[0];
+				var receiverName:String = videoUsers[1];
+				_publishVideo();
+				if(senderName == loginName){
+					_getOtherVideo(receiverName);
+					Message.showDebugMessage(loginName+"=="+receiverName);
+				}else{
+					_getOtherVideo(senderName);
+					Message.showDebugMessage(loginName+"=="+senderName);
+				}
+				
+				if(clientType==2)
+					ExternalInterface.call("$S.start");
+			}
+			
+			public function startDoctorVideo(other:String):void{				
+				_publishVideo();				
+				_getOtherVideo(other);				
+				//closeVideoBtn.enabled = true;				
+				//sendVideoBtn.enabled = false;				
+			}
+			
+			internal function _publishVideo():void{				
+				outNs = new NetStream(nc);				
+				
+				cam = Camera.getCamera();				
+				if(cam != null){					
+					cam.setMotionLevel(50,100);					
+					cam.setMode(VEDIO_WIDTH,VEDIO_HEIGHT,15,true);					
+					cam.setQuality(0,VEDIO_QUALITY);					
+					cam.setKeyFrameInterval(VEDIO_KEYFRAME);
+					cam.setLoopback(true);
+					
+					var h264Settings:H264VideoStreamSettings;
+					h264Settings = new H264VideoStreamSettings();
+					h264Settings.setProfileLevel(H264Profile.BASELINE, H264Level.LEVEL_3_2);
+					h264Settings.setQuality(0, VEDIO_QUALITY);
+					h264Settings.setMode(VEDIO_WIDTH, VEDIO_HEIGHT, 15);
+					outNs.videoStreamSettings = h264Settings
+					outNs.attachCamera(cam);					
+				}else{					
+					Message.showDialogMessage("没有可使用的摄像头！");					
+				}			
+				
+				mic = Microphone.getMicrophone();				
+				if(mic != null){					
+					//mic.setUseEchoSuppression(true);
+					mic.codec = SoundCodec.SPEEX;
+					mic.encodeQuality = 8;
+					mic.noiseSuppressionLevel = 0;
+					mic.setLoopBack(false);
+					outNs.attachAudio(mic);					
+				}else{					
+					Message.showDialogMessage("没有可使用的麦克风!");					
+				}					
+				
+				outNs.bufferTime =0;
+				outNs.publish(loginName,"live");		
+				
+				Message.showDebugMessage(loginName + "publish to " + loginName);	
+				lVideo = new Video();				
+				lVideo.width = VEDIO_WIDTH;				
+				lVideo.height = VEDIO_HEIGHT;				
+				lVideo.attachCamera(cam);				
+				localVideo.addChild(lVideo);  
+			}			
+			
+			internal function _getOtherVideo(other:String):void{				
+				inNs = new NetStream(nc);				
+				rVideo = new Video(VEDIO_WIDTH,VEDIO_HEIGHT);
+				rVideo.smoothing = true;
+				rVideo.attachNetStream(inNs);		
+				
+				remoteVideo.addChild(rVideo);	
+				inNs.bufferTime =0;
+				inNs.play(other);				
+				//closeVideoBtn.enabled = true;				
+				//sendVideoBtn.enabled = false;		
+				Message.showDebugMessage(loginName + "play from " + other);
+			}
+			
+			public function closeStream2():void{				
+				// Alert.show("关闭视频流！");				
+				nc.call("discuzVideo",null,1,1);				
+				//closeVideoBtn.enabled = false;				
+				//sendVideoBtn.enabled = true;				
+			}
+			
+			public function discuzVideo(str:String):void{				
+				Alert.show(str+"已断开视频！");	
+				outNs.close();				
+				inNs.close();		
+				//closeVideoBtn.enabled = false;				
+				//sendVideoBtn.enabled = true;		
+			}		
+			
+			public function sendChatMessage(inputWhatYouWantSay: String):void{				
+				var message:String = inputWhatYouWantSay;   
+				if(message == "")
+					return;				
+				
+				nc.call("sayToAll",null,message);							
+			}			
+			
+			public function showJionInInfo(message:String):void{			   
+				Message.showDebugMessage(message + "加入聊天室\n");			
+			}		
+			
+			public function showChatMessage(message:String):void{				
+				Message.showDebugMessage(message + "\n");				
+			}			
+			
+			public function showMessage(message:String):void{   
+				Message.showDebugMessage(message + "\n");				
+			}
+			
+			public function disableSound():void{
+				outNs.attachAudio(null);
+			}
+			
+			public function enableSound():void{
+				outNs.attachAudio(mic);	
+			}
+			
+			public function disableVideo():void{
+				outNs.attachCamera(null);
+				lVideo.attachCamera(null);
+				
+				// if(outNs != null)
+				//   outNs.pause();
+				//localVideo.pause();
+			}
+			
+			public function enableVideo():void{
+				outNs.attachCamera(cam);
+				lVideo.attachCamera(cam);
+				//if(outNs != null)
+				//   outNs.resume();
+				// localVideo.play();
+			}	   
+			
+		]]>
+		
+	</fx:Script>
+	
+	<fx:Declarations>
+		
+		<!-- 将非可视元素（例如服务、值对象）放在此处 -->
+		
+	</fx:Declarations>
+	
+</s:Application>
+

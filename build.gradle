@@ -1,0 +1,45 @@
+def app="app"
+def height=400
+def width=300
+buildscript {
+    repositories {
+        mavenLocal()
+		mavenCentral()
+    }
+    dependencies {
+        classpath group: 'org.gradlefx', name: 'gradlefx', version: '1.2.0'
+    }
+}	
+
+apply plugin: 'gradlefx'
+apply plugin: 'flashbuilder'
+
+//take a custom environment variable which contains the Flex SDK location
+flexHome = System.getenv()['FLEX_HOME'] 
+version = '1.0-SNAPSHOT'
+type = 'swf'
+mainClass = "$app"
+playerVersion = "11.9"
+output="$app"
+resourceDirs = ['html-template']
+
+additionalCompilerOptions = [
+  '-target-player=11.9',
+  '-strict=false'
+]
+
+htmlWrapper {
+            application  = "$app"
+            file         = "index.template.html"
+            source        = 'html-template'
+            tokenReplacements = [
+                        swf: "$app",
+                        version_major:11,
+                        version_minor:9,
+                        version_revision:0,
+                        height:height,
+                        width:width,
+                        bgcolor:"#ffffff",
+                        expressInstallSwf:"playerProductInstall.swf"
+            ]
+}

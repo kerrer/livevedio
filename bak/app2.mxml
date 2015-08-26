@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"
+			   xmlns:s="library://ns.adobe.com/flex/spark"
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   minWidth="1200" minHeight="1000" >
+	
+	<s:TextInput id="roomName" x="300" y="37" width="175"/>	
+	<s:Button x="490" y="38" label="join room" click="connectAndJoinRoom();"/>
+	<s:Button x="580" y="38" label="change room" click="changeAndJoinRoom();"/>
+	<s:Button x="680" y="38" label="leave room" click="leaveRoom();"/>
+	
+	<s:TextArea id="roomArea" x="84" y="67" width="311" height="200"/>
+	
+	
+	<s:Label x="405" y="70" fontWeight="bold" text="用户列表："/>
+	<mx:DataGrid id="userList" x="403" y="90" width="185" height="160">		
+		<mx:columns>			
+			<mx:DataGridColumn dataField="label" headerText="用户名"/>
+			<mx:DataGridColumn  dataField="user_id" headerText="id"/>
+		</mx:columns>		
+	</mx:DataGrid>
+	
+	<s:Button id="sendVideoBtn" x="405" y="260" width="185" label="申请视频交流in" click="inviteVideo()"
+			  enabled="false"/>	
+	<s:Button id="closeVideoBtn" x="405" y="290" width="185" label="关闭视频窗cl" click="closeStream()"
+			  enabled="false"/>
+	<s:Button id="sendButton" x="405" y="320" width="185" label="发送消息sm" click="sendMessage();"
+			  enabled="false"/>
+	
+	<s:Label x="84" y="285" text="chat："/>
+	<s:TextInput id="inputWhatYouWantSay" x="120" y="280" width="270"/>
+	<s:TextInput id="selectUser" x="84" y="320" width="311" enabled="false"/>
+	
+	<s:BorderContainer x="601" y="65" width="320" height="240" borderStyle="inset" borderWeight="1">			
+		<s:VideoDisplay id="localVideo"/>		
+	</s:BorderContainer>	
+	<s:BorderContainer x="601" y="310" width="320" height="240" borderStyle="inset" borderWeight="1">		
+		<s:VideoDisplay id="remoteVideo"/>		
+	</s:BorderContainer>	
+	
+	
+	<s:Label x="84" y="350" fontWeight="bold" text="调试窗口："/>	
+	<s:TextArea id="systemInfo" x="84" y="370" width="450" editable="false"/>
+	
+	
+	<fx:Script>
+
+		<![CDATA[
+			
+			import flash.events.NetStatusEvent;			
+			import flash.media.Camera;			
+			import flash.media.Microphone;			
+			import flash.media.Video;			
+			import flash.net.NetConnection;			
+			import flash.net.NetStream;			
+			import flash.net.Responder;			
+			import flash.net.SharedObject;				
+			import flash.globalization.DateTimeFormatter;
+			import flash.globalization.DateTimeStyle;
+			import flash.globalization.LocaleID;
+			
+			import mx.collections.ArrayCollection;			
+			import mx.controls.Alert;			
+			import mx.events.CloseEvent;			
+			import mx.events.DataGridEvent;			
+			import mx.events.ListEvent;		
+			import mx.utils.UIDUtil; 
+			
+		    private var nc:NetConnection; 			
+			private var responder:Responder;			
+			private var randomUser:String;			
+			private var listSO:SharedObject;			
+					
+			private var outNs:NetStream;			
+			private var inNs:NetStream;			
+			private var lVideo:Video;			
+			private var rVideo:Video;			
+			private var cam:Camera;			
+			private var mic:Microphone;			
+			private var videoUsers:Array;
+			private var uri:String = "rtmp://192.168.56.16/yxvedio/room";
+			private var room:String;
+			private var session_id:String="sfasfasfasl3rwlrjlsfsf";
+			private var parter_id:Number =0;
+			private var loginName:String ="";
+			
+			private const VEDIO_WIDTH:Number = 320;
+			private const VEDIO_HEIGHT:Number = 240;
+			private const VEDIO_KEYFRAME:Number = 10;
+			private const VEDIO_QUALITY:Number =85;
+			
+			[Bindable]			
+			private var cards:ArrayCollection;	
+			
+		    internal function init():void{				
+				randomUser ="User" + Math.round(Math.random()*100000).toString();				
+				//nickName.text = randomUser;				
+			}		
+			
+			private function connectAndJoinRoom():void{					
+			    responder = new Responder(doTips);				
+				//var _nickName:String = nickName.text;
+				
+									
+					if( nc == null ){						
+						var act: String;						
+						if(roomName.text!=""){
+							room = roomName.text;
+							act = "join room";
+						}else{
+							var  dt:Date = new Date();
+							var dtf:DateTimeFormatter = new DateTimeFormatter("zh-CN");
+							dtf.setDateTimePattern("yyyyMMddHHmmssSSSSS");	
+							room  = dtf.format(dt) +  (Math.random()*100 + 10);	
+							act = "new room";
+						}			
+						
+						initalNetConnection(act);						
+					}					
+					
+			}			
+			
+		   private function changeAndJoinRoom():void{
+		      if(roomName.text==""){
+			     return;
+			  }
+			  room = roomName.text;
+			  initalNetConnection("join room");	
+		   }
+			
+		   private function initalNetConnection(act:String="new room"):void{		   
+			    if(nc != null)
+					nc.close();
+				nc = new NetConnection();				
+				nc.addEventListener(NetStatusEvent.NET_STATUS,connectStatus);				
+				nc.client = this;				
+				nc.connect(uri+"/"+room,room,session_id,act);				
+		   }
+			
+		   private function leaveRoom():void{
+			   if(nc != null)
+				   nc.close();
+			   
+			   room = "";
+			   cards.removeAll();
+		   }
+			
+		   internal function connectStatus(evt:NetStatusEvent):void{				
+				// Alert.show(evt.info.code);				
+				systemInfo.appendText("SystemInfo:"+evt.info.code+"\n");	
+				ExternalInterface.call("showMessage",evt.info.code);	
+				if(evt.info.code == "NetConnection.Connect.Success"){					
+					nc.call("jionChatRoom",null,1);	
+					ExternalInterface.call("showMessage","sucess");	
+					_setListSO();			
+					sendButton.enabled = true;					
+				}else if(evt.info.code == "NetConnection.Connect.Rejected"){					
+					if(evt.info.application.indexOf("NewRoom") != -1){
+					     var room_id: String = evt.info.application.substr(evt.info.application.indexOf(":")+1);
+						 uri = "rtmp://192.168.56.16/yxvedio/room"+room_id;
+						 nc=null;
+						 initalNetConnection();   
+					}
+					
+					if(nc !=null)
+						nc.close();
+					
+					ExternalInterface.call("showMessage",evt.info.application);	
+				}else{
+					ExternalInterface.call("showMessage","failure");	
+				}			
+		   }		
+			
+		   private function sendMessage():void{				
+				var message:String = inputWhatYouWantSay.text;   
+				if(message == "")
+					return;
+				
+				roomArea.appendText("you say: " + message + "\n");	
+				nc.call("sayToAll",null,message);				
+				inputWhatYouWantSay.text = "";				
+		   }
+						
+		   public function showJionInInfo(message:String):void{		
+			   
+					roomArea.appendText(message + "加入聊天室\n");					
+								
+		   }		
+		 
+		   public function showChildroom(message:String):void{
+			   room = message.toString();
+			   ExternalInterface.call("showMessage", message.toString());		
+		   }
+		
+		   public function showChatMessage(message:String):void{				
+				roomArea.appendText(message + "\n");				
+		   }			
+			
+		   public function showMessage(message:String):void{   
+			   roomArea.appendText(message + "\n");				
+		   }
+			
+		   internal function doTips():void{				
+				Alert.show("发送成功");				
+		   }		
+			
+		   public function loginInfo(username:String):void{	
+			   loginName = username;
+				roomArea.appendText(username + "join room\n");
+		   }
+			
+		   public function disconnectMessage(info:String):void{				
+				roomArea.appendText(info + "退出聊天室！\n");				
+		   }
+			
+		   internal function _setListSO():void{		
+			   ExternalInterface.call("showMessage", nc.uri);	
+			  
+				listSO = SharedObject.getRemote(room,nc.uri,false);				
+				listSO.connect(nc);				
+				listSO.addEventListener(SyncEvent.SYNC,syncHander);			
+				userList.addEventListener(ListEvent.ITEM_CLICK,clickHander);				
+		   }		
+			
+		   internal function clickHander(evt:ListEvent):void{				
+				selectUser.text = evt.target.selectedItem.label;	
+				parter_id = int(evt.target.selectedItem.user_id);
+				sendVideoBtn.enabled = true;				
+		  }
+			
+	      internal function syncHander(evt:SyncEvent):void{				
+				_showUserList();				
+			}
+			
+		  internal function _showUserList():void{		
+			 	
+				cards = new ArrayCollection();				
+						
+				for(var user_id:String in listSO.data){					
+					
+					cards.addItem({user_id:user_id,label:listSO.data[user_id]});					
+				}				
+				
+				userList.dataProvider = cards;    
+		   }
+			
+		  internal function inviteVideo():void{		
+			
+			 //var toUser:String = selectUser.text==null?"":selectUser.text;				
+				if(parter_id>0){					
+					nc.call("videoInvite",null,parter_id);					
+				}else{					
+					Alert.show("请选择要视频的用户！");					
+				}
+		  }
+			
+		public function showInviteMessage(message:String):void{				
+				videoUsers=message.split(";");				
+				Alert.show(videoUsers[0]+"邀请你视频，是否同意?","是吗",Alert.YES|Alert.NO,this,alertClientHandel);
+		}
+			
+			
+     
+			
+	   internal function alertClientHandel(evt:CloseEvent):void{				
+				if(evt.detail == Alert.YES){					
+					_publishVideo();					
+					_getOtherVideo(videoUsers[0]);	
+					var senderName: String = videoUsers[0];					
+					var senderId: String = videoUsers[1];
+					ExternalInterface.call("showMessage", senderName +  "=" + senderId);	
+					nc.call("agreeVideoInvite",null,loginName,senderId);					
+					closeVideoBtn.enabled = true;					
+					sendVideoBtn.enabled = false;					
+				}
+	  }
+			
+	  internal function _publishVideo():void{				
+				outNs = new NetStream(nc);				
+								
+				cam = Camera.getCamera();				
+				if(cam != null){					
+					cam.setMotionLevel(50,100);					
+					cam.setMode(VEDIO_WIDTH,VEDIO_HEIGHT,15,true);					
+					cam.setQuality(0,VEDIO_QUALITY);					
+					cam.setKeyFrameInterval(VEDIO_KEYFRAME);
+					cam.setLoopback(true);
+					
+					var h264Settings:H264VideoStreamSettings;
+					h264Settings = new H264VideoStreamSettings();
+					h264Settings.setProfileLevel(H264Profile.BASELINE, H264Level.LEVEL_3_2);
+					h264Settings.setQuality(0, VEDIO_QUALITY);
+					h264Settings.setMode(VEDIO_WIDTH, VEDIO_HEIGHT, 15);
+					outNs.videoStreamSettings = h264Settings
+					outNs.attachCamera(cam);					
+				}else{					
+					Alert.show("没有可使用的摄像头！");					
+				}			
+				
+				mic = Microphone.getMicrophone();				
+				if(mic != null){					
+					mic.setUseEchoSuppression(true);					
+					outNs.attachAudio(mic);					
+				}else{					
+					Alert.show("没有可使用的麦克风!");					
+				}    
+				
+							
+				outNs.publish(loginName,"live");		
+				
+				ExternalInterface.call("showMessage", loginName + "publish to " + loginName);	
+				//lVideo = new Video();				
+				//lVideo.width = VEDIO_WIDTH;				
+				//lVideo.height = VEDIO_HEIGHT;				
+				//lVideo.attachCamera(cam);				
+				//localVideo.addChild(lVideo);  
+			}
+			
+	
+		
+			internal function _getOtherVideo(other:String):void{				
+				inNs = new NetStream(nc);				
+				rVideo = new Video(VEDIO_WIDTH,VEDIO_HEIGHT);
+				rVideo.smoothing = true;
+				rVideo.attachNetStream(inNs);				
+				remoteVideo.addChild(rVideo);				
+				inNs.play(other);				
+				closeVideoBtn.enabled = true;				
+				sendVideoBtn.enabled = false;		
+				ExternalInterface.call("showMessage", loginName + "play from " + other);
+			}
+			
+		 public function showVideo(other:String):void{				
+				_publishVideo();				
+				_getOtherVideo(other);				
+				closeVideoBtn.enabled = true;				
+				sendVideoBtn.enabled = false;				
+		}
+			
+		internal function closeStream():void{				
+				// Alert.show("关闭视频流！");				
+				nc.call("discuzVideo",null,videoUsers[0],videoUsers[1]);				
+				closeVideoBtn.enabled = false;				
+				sendVideoBtn.enabled = true;				
+		}
+		
+	   public function discuzVideo(str:String):void{				
+				Alert.show(str+"已断开视频！");	
+				outNs.close();				
+				inNs.close();		
+				closeVideoBtn.enabled = false;				
+				sendVideoBtn.enabled = true;				
+		}		
+			
+     ]]>
+		
+	</fx:Script>
+	
+	<fx:Declarations>
+		
+		<!-- 将非可视元素（例如服务、值对象）放在此处 -->
+		
+	</fx:Declarations>
+	
+</s:Application>
+

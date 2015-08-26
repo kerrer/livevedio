@@ -1,0 +1,53 @@
+
+html, body  { height:100%; }
+body { margin:0; padding:0; overflow:auto; text-align:center;  }   
+object:focus { outline:none; }
+#flashContent { display:none; }
+
+#mediaDiv {width:322px;height:494px;float:left;padding:5px 30px}
+
+#commandsDiv{float:left}
+.rowDiv{ clear: both;
+    margin: 10px 2px;
+    overflow: hidden; text-align: left;}
+#userListUl{
+border: 1px solid #000000;
+    display: block;
+    float: left;
+    height: 200px;
+    margin: 0 10px;
+    width: 170px;
+     padding: 0;
+}
+#videoCmdUl{
+float:left;width:150px;padding: 0px;
+}
+#videoCmdUl li{
+ display:block;
+ margin:5px 0px;
+}
+#videoCmdUl li input{
+  width:100%
+}
+#roomChatDiv{
+ border: 1px solid #000000;
+    display: block;
+    float: left;
+    height: 200px;
+    margin: 0;
+    padding: 0;
+    width: 300px;
+}
+#roomChatDiv li{
+display: block;
+    text-align: left;
+}
+
+#userListUl li{
+   display: block;
+    text-align: left;
+}
+
+#userListUl li.selected{
+  background-color: #cccccc;
+}
